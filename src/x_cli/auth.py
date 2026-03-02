@@ -14,6 +14,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .xdk_auth import XdkOAuth2Manager, load_oauth2_manager
+
 
 @dataclass
 class Credentials:
@@ -24,13 +26,16 @@ class Credentials:
     bearer_token: str
 
 
-def load_credentials() -> Credentials:
-    """Load credentials from env vars, with .env fallback."""
-    # Try ~/.config/x-cli/.env then cwd .env
+def _load_dotenv_sources() -> None:
     config_env = Path.home() / ".config" / "x-cli" / ".env"
     if config_env.exists():
         load_dotenv(config_env)
     load_dotenv()  # cwd .env
+
+
+def load_credentials() -> Credentials:
+    """Load credentials from env vars, with .env fallback."""
+    _load_dotenv_sources()
 
     def require(name: str) -> str:
         val = os.environ.get(name)
@@ -48,6 +53,20 @@ def load_credentials() -> Credentials:
         access_token_secret=require("X_ACCESS_TOKEN_SECRET"),
         bearer_token=require("X_BEARER_TOKEN"),
     )
+
+
+def load_credentials_optional() -> Credentials | None:
+    """Best-effort OAuth1/bearer credentials loader."""
+    try:
+        return load_credentials()
+    except SystemExit:
+        return None
+
+
+def load_auth_context() -> tuple[Credentials | None, XdkOAuth2Manager | None]:
+    """Load available auth methods without forcing both to exist."""
+    _load_dotenv_sources()
+    return load_credentials_optional(), load_oauth2_manager()
 
 
 def _percent_encode(s: str) -> str:

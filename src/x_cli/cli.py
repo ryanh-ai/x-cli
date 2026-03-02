@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 
 import click
 
 from .api import XApiClient
-from .auth import load_credentials
+from .auth import load_auth_context
 from .formatters import format_output
 from .utils import parse_tweet_id, strip_at
 
@@ -20,8 +21,8 @@ class State:
     @property
     def client(self) -> XApiClient:
         if self._client is None:
-            creds = load_credentials()
-            self._client = XApiClient(creds)
+            creds, oauth2 = load_auth_context()
+            self._client = XApiClient(creds, oauth2)
         return self._client
 
     def output(self, data, title: str = "") -> None:
@@ -44,8 +45,73 @@ def cli(ctx, fmt, verbose):
 
 
 # ============================================================
+# auth
+# ============================================================
+
+
+@cli.group()
+def auth():
+    """OAuth2 auth management."""
+
+
+@auth.command("login")
+def auth_login():
+    """Run OAuth2 PKCE login flow and save tokens."""
+    from .xdk_auth import load_oauth2_manager
+
+    manager = load_oauth2_manager()
+    if not manager:
+        raise click.ClickException("Missing X_CLIENT_ID. Set it in ~/.config/x-cli/.env and retry.")
+
+    try:
+        session = manager.login_interactive()
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    click.echo("OAuth2 login successful.")
+    click.echo(f"Scopes: {session.scope}")
+
+
+@auth.command("status")
+def auth_status():
+    """Show OAuth2 token status."""
+    from .xdk_auth import load_oauth2_manager
+
+    manager = load_oauth2_manager()
+    if not manager:
+        click.echo("OAuth2 config: not configured (set X_CLIENT_ID)")
+        return
+
+    session = manager.load_session()
+    if not session:
+        click.echo("OAuth2 session: not logged in")
+        return
+
+    expires = datetime.fromtimestamp(session.expires_at, tz=timezone.utc).isoformat()
+    state = "expired" if session.is_expired(skew=0) else "valid"
+    click.echo(f"OAuth2 session: {state}")
+    click.echo(f"Expires (UTC): {expires}")
+    click.echo(f"Scopes: {session.scope}")
+
+
+@auth.command("logout")
+def auth_logout():
+    """Clear OAuth2 tokens."""
+    from .xdk_auth import load_oauth2_manager
+
+    manager = load_oauth2_manager()
+    if not manager:
+        click.echo("OAuth2 config not set; nothing to do.")
+        return
+
+    manager.logout()
+    click.echo("OAuth2 session cleared.")
+
+
+# ============================================================
 # tweet
 # ============================================================
+
 
 @cli.group()
 def tweet():
@@ -130,6 +196,7 @@ def tweet_metrics(state, id_or_url):
 # user
 # ============================================================
 
+
 @cli.group()
 def user():
     """User operations."""
@@ -187,6 +254,7 @@ def user_following(state, username, max_results):
 # me
 # ============================================================
 
+
 @cli.group()
 def me():
     """Self operations (authenticated user)."""
@@ -208,6 +276,15 @@ def me_bookmarks(state, max_results):
     """Fetch your bookmarks."""
     data = state.client.get_bookmarks(max_results)
     state.output(data, "Bookmarks")
+
+
+@me.command("likes")
+@click.option("--max", "max_results", default=10, type=int, help="Max results (1-100)")
+@pass_state
+def me_likes(state, max_results):
+    """Fetch your liked tweets."""
+    data = state.client.get_likes(max_results)
+    state.output(data, "Likes")
 
 
 @me.command("bookmark")
@@ -234,6 +311,7 @@ def me_unbookmark(state, id_or_url):
 # quick actions (top-level)
 # ============================================================
 
+
 @cli.command("like")
 @click.argument("id_or_url")
 @pass_state
@@ -255,7 +333,10 @@ def retweet(state, id_or_url):
 
 
 def main():
-    cli()
+    try:
+        cli()
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
 
 
 if __name__ == "__main__":

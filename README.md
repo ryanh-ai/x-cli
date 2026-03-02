@@ -17,6 +17,7 @@ Uses the same auth credentials as [x-mcp](https://github.com/INFATOSHI/x-mcp). I
 | **Users** | `user get`, `user followers`, `user following` | `x-cli user get openai` |
 | **Engage** | `like`, `retweet` | `x-cli like <tweet-url>` |
 | **Bookmarks** | `me bookmarks`, `me bookmark`, `me unbookmark` | `x-cli me bookmarks --max 20` |
+| **Self likes** | `me likes` | `x-cli me likes --max 20` |
 | **Analytics** | `tweet metrics` | `x-cli tweet metrics <tweet-id>` |
 
 Accepts tweet URLs or IDs interchangeably -- paste `https://x.com/user/status/123` or just `123`.
@@ -39,26 +40,13 @@ uv tool install x-cli
 
 ## Auth
 
-You need 5 credentials from the [X Developer Portal](https://developer.x.com/en/portal/dashboard).
+x-cli supports both:
+- **OAuth1 + Bearer** (legacy/current commands)
+- **OAuth2 PKCE user-context** (bookmarks/likes/mentions via official XDK path)
 
-### If you already use x-mcp
+### OAuth1 + Bearer credentials
 
-Symlink its `.env` and you're done:
-
-```bash
-mkdir -p ~/.config/x-cli
-ln -s /path/to/x-mcp/.env ~/.config/x-cli/.env
-```
-
-### Fresh setup
-
-1. Go to the [X Developer Portal](https://developer.x.com/en/portal/dashboard)
-2. Create an app (or use an existing one)
-3. Save your **Consumer Key** (API Key), **Secret Key** (API Secret), and **Bearer Token**
-4. Under **User authentication settings**, set permissions to **Read and write**
-5. Generate (or regenerate) **Access Token** and **Access Token Secret**
-
-Put all 5 values in `~/.config/x-cli/.env`:
+Put these in `~/.config/x-cli/.env`:
 
 ```
 X_API_KEY=your_consumer_key
@@ -68,7 +56,34 @@ X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
 ```
 
-x-cli also checks for a `.env` in the current directory.
+### OAuth2 PKCE setup
+
+Add:
+
+```
+X_CLIENT_ID=your_oauth2_client_id
+X_CLIENT_SECRET=your_oauth2_client_secret   # optional depending on app type
+X_OAUTH2_REDIRECT_URI=http://127.0.0.1:3000/callback
+# optional override
+# X_OAUTH2_SCOPES=tweet.read users.read bookmark.read bookmark.write like.read like.write follows.read offline.access
+```
+
+Then login:
+
+```bash
+x-cli auth login
+x-cli auth status
+```
+
+`auth login` will try to capture the browser callback automatically on your local redirect URI. If that fails (headless/SSH), it falls back to prompting for a pasted callback URL.
+
+To clear OAuth2 tokens:
+
+```bash
+x-cli auth logout
+```
+
+x-cli checks `~/.config/x-cli/.env`, then current directory `.env`, then environment variables.
 
 ---
 
@@ -101,8 +116,17 @@ x-cli user following elonmusk
 ```bash
 x-cli me mentions --max 20
 x-cli me bookmarks
+x-cli me likes --max 20
 x-cli me bookmark <id-or-url>
 x-cli me unbookmark <id-or-url>
+```
+
+### Auth helpers
+
+```bash
+x-cli auth login
+x-cli auth status
+x-cli auth logout
 ```
 
 ### Quick actions
@@ -148,6 +172,13 @@ Double-check all 5 credentials in your `.env`. No extra spaces or newlines.
 
 ### 429 Rate Limited
 The error includes the reset timestamp. Wait until then.
+
+### "OAuth2 login required" for bookmarks/likes
+Set `X_CLIENT_ID` (and optional `X_CLIENT_SECRET`) and run:
+
+```bash
+x-cli auth login
+```
 
 ### "Missing env var" on startup
 x-cli looks for credentials in `~/.config/x-cli/.env`, then the current directory's `.env`, then environment variables. Make sure at least one source has all 5 values.
