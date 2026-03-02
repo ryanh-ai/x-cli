@@ -174,11 +174,13 @@ def tweet_quote(state, id_or_url, text):
 
 @tweet.command("search")
 @click.argument("query")
-@click.option("--max", "max_results", default=10, type=int, help="Max results (10-100)")
+@click.option("--max", "max_results", default=100, type=int, help="Max total results (paginates automatically, default 100)")
+@click.option("--start-time", default=None, help="Filter start time (ISO 8601, e.g. 2026-02-20T00:00:00Z)")
+@click.option("--end-time", default=None, help="Filter end time (ISO 8601, e.g. 2026-02-28T23:59:59Z)")
 @pass_state
-def tweet_search(state, query, max_results):
+def tweet_search(state, query, max_results, start_time, end_time):
     """Search recent tweets."""
-    data = state.client.search_tweets(query, max_results)
+    data = state.client.search_tweets(query, max_results, start_time=start_time, end_time=end_time)
     state.output(data, f"Search: {query}")
 
 

@@ -274,20 +274,59 @@ class XApiClient:
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         return self._bearer_get(f"{API_BASE}/tweets/{tweet_id}?{qs}")
 
-    def search_tweets(self, query: str, max_results: int = 10) -> dict[str, Any]:
+    def search_tweets(
+        self,
+        query: str,
+        max_results: int = 10,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> dict[str, Any]:
         creds = self._require_creds()
-        max_results = max(10, min(max_results, 100))
-        params = {
-            "query": query,
-            "max_results": str(max_results),
-            "tweet.fields": "created_at,public_metrics,author_id,conversation_id,entities,lang,note_tweet",
-            "expansions": "author_id,attachments.media_keys",
-            "user.fields": "name,username,verified,profile_image_url",
-            "media.fields": "url,preview_image_url,type",
+        # Paginate transparently: the API allows max 100 per page, so loop with
+        # next_token until we have max_results tweets or the API has no more.
+        # Note: /tweets/search/recent is limited to a 7-day window on Basic/Pro
+        # tiers. Full-archive (/all) requires Enterprise ($42k+/mo) — see TODO.md.
+        all_tweets: list[dict[str, Any]] = []
+        next_token: str | None = None
+
+        while len(all_tweets) < max_results:
+            remaining = max_results - len(all_tweets)
+            page_size = max(10, min(remaining, 100))
+
+            params: dict[str, str] = {
+                "query": query,
+                "max_results": str(page_size),
+                "tweet.fields": "created_at,public_metrics,author_id,conversation_id,entities,lang,note_tweet",
+                "expansions": "author_id,attachments.media_keys",
+                "user.fields": "name,username,verified,profile_image_url",
+                "media.fields": "url,preview_image_url,type",
+            }
+            if start_time:
+                params["start_time"] = start_time
+            if end_time:
+                params["end_time"] = end_time
+            if next_token:
+                params["next_token"] = next_token
+
+            url = f"{API_BASE}/tweets/search/recent"
+            resp = self._http.get(url, params=params, headers={"Authorization": f"Bearer {creds.bearer_token}"})
+            data = self._handle(resp)
+
+            page_tweets = data.get("data") or []
+            if not page_tweets:
+                break
+
+            all_tweets.extend(page_tweets)
+
+            meta = data.get("meta", {}) or {}
+            next_token = meta.get("next_token")
+            if not next_token:
+                break
+
+        return {
+            "data": all_tweets[:max_results],
+            "meta": {"result_count": len(all_tweets[:max_results])},
         }
-        url = f"{API_BASE}/tweets/search/recent"
-        resp = self._http.get(url, params=params, headers={"Authorization": f"Bearer {creds.bearer_token}"})
-        return self._handle(resp)
 
     def get_tweet_metrics(self, tweet_id: str) -> dict[str, Any]:
         params = "tweet.fields=public_metrics,non_public_metrics,organic_metrics"
