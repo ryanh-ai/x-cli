@@ -1,24 +1,15 @@
 # x-cli TODOs
 
-## Use user timeline endpoint for long-range feed fetches
+## ~~Use user timeline endpoint for long-range feed fetches~~ ✅ Done
 
-`/tweets/search/recent` is limited to a 7-day window (Basic/Pro tiers).
-The `/2/users/:id/tweets` timeline endpoint has no such restriction and supports
-`start_time`/`end_time` freely — making it better for feed checks that span
-weeks or months (e.g. `last_checked` > 7 days ago).
+`get_timeline()` now paginates via `pagination_token`, supports `start_time`/
+`end_time`, and merges `username`/`name` onto tweets. `backfill-user.sh` uses
+`x-cli user timeline` instead of `tweet search`, giving up to 3,200 tweets
+with no 7-day window restriction.
 
-### What needs to change
-
-- **`api.py` — `get_timeline()`**: add `start_time`/`end_time` params and a
-  `next_token` pagination loop (same pattern as the updated `search_tweets()`).
-
-- **`cli.py` — `user timeline`**: expose `--start-time` and `--end-time` options,
-  remove the 100-result cap (pagination handles it now).
-
-- **`fetch-tweets.sh`** (check-tweets skill): switch to per-user timeline calls
-  when `--since` is older than 7 days, falling back to the combined `search`
-  query for recent-only fetches. Tradeoff: ~1 API call per account (19 for the
-  current feed) vs. 1 combined search call, but correct date coverage.
+Note: `fetch-tweets.sh` (regular feed checks) still uses combined search —
+switching it to per-user timeline calls is a future option if the 7-day window
+becomes a problem for infrequent feed checks.
 
 ### Why not `/tweets/search/all`?
 
