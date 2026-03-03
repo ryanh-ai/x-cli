@@ -356,22 +356,77 @@ class XApiClient:
         fields = "user.fields=created_at,description,public_metrics,verified,profile_image_url,url,location,pinned_tweet_id"
         return self._bearer_get(f"{API_BASE}/users/by/username/{username}?{fields}")
 
-    def get_timeline(self, user_id: str, max_results: int = 10) -> dict[str, Any]:
+    def get_timeline(
+        self,
+        user_id: str,
+        max_results: int = 10,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> dict[str, Any]:
         creds = self._require_creds()
-        max_results = max(5, min(max_results, 100))
-        params = {
-            "max_results": str(max_results),
-            "tweet.fields": "created_at,public_metrics,author_id,conversation_id,entities,lang,note_tweet",
-            "expansions": "author_id,attachments.media_keys,referenced_tweets.id",
-            "user.fields": "name,username,verified",
-            "media.fields": "url,preview_image_url,type",
+        # Timeline supports up to 3,200 most recent tweets with no time-based
+        # window (unlike search which is capped at 7 days on Basic/Pro tiers).
+        # Paginate via pagination_token until max_results satisfied or exhausted.
+        all_tweets: list[dict[str, Any]] = []
+        users_by_id: dict[str, dict[str, Any]] = {}
+        pagination_token: str | None = None
+
+        while len(all_tweets) < max_results:
+            remaining = max_results - len(all_tweets)
+            page_size = max(5, min(remaining, 100))
+
+            params: dict[str, str] = {
+                "max_results": str(page_size),
+                "tweet.fields": "created_at,public_metrics,author_id,conversation_id,entities,lang,note_tweet",
+                "expansions": "author_id,attachments.media_keys,referenced_tweets.id",
+                "user.fields": "name,username,verified,profile_image_url",
+                "media.fields": "url,preview_image_url,type",
+            }
+            if start_time:
+                params["start_time"] = start_time
+            if end_time:
+                params["end_time"] = end_time
+            if pagination_token:
+                params["pagination_token"] = pagination_token
+
+            resp = self._http.get(
+                f"{API_BASE}/users/{user_id}/tweets",
+                params=params,
+                headers={"Authorization": f"Bearer {creds.bearer_token}"},
+            )
+            data = self._handle(resp)
+
+            page_tweets = data.get("data") or []
+            if not page_tweets:
+                break
+
+            all_tweets.extend(page_tweets)
+
+            # Collect user objects from each page's includes
+            for user in (data.get("includes") or {}).get("users") or []:
+                uid = user.get("id")
+                if uid:
+                    users_by_id[uid] = user
+
+            meta = data.get("meta", {}) or {}
+            pagination_token = meta.get("next_token")
+            if not pagination_token:
+                break
+
+        # Merge username/name onto each tweet
+        result_tweets = all_tweets[:max_results]
+        for tweet in result_tweets:
+            user = users_by_id.get(tweet.get("author_id", ""))
+            if user:
+                tweet["username"] = user.get("username")
+                tweet["name"] = user.get("name")
+                if user.get("verified"):
+                    tweet["verified"] = True
+
+        return {
+            "data": result_tweets,
+            "meta": {"result_count": len(result_tweets)},
         }
-        resp = self._http.get(
-            f"{API_BASE}/users/{user_id}/tweets",
-            params=params,
-            headers={"Authorization": f"Bearer {creds.bearer_token}"},
-        )
-        return self._handle(resp)
 
     def get_followers(self, user_id: str, max_results: int = 100) -> dict[str, Any]:
         creds = self._require_creds()

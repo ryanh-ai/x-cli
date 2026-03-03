@@ -215,14 +215,16 @@ def user_get(state, username):
 
 @user.command("timeline")
 @click.argument("username")
-@click.option("--max", "max_results", default=10, type=int, help="Max results (5-100)")
+@click.option("--max", "max_results", default=100, type=int, help="Max total results (paginates automatically, default 100, up to 3200)")
+@click.option("--start-time", "start_time", default=None, help="Only tweets after this time (ISO 8601, e.g. 2026-02-01T00:00:00Z)")
+@click.option("--end-time", "end_time", default=None, help="Only tweets before this time (ISO 8601)")
 @pass_state
-def user_timeline(state, username, max_results):
-    """Fetch a user's recent tweets."""
+def user_timeline(state, username, max_results, start_time, end_time):
+    """Fetch a user's recent tweets (up to 3,200, no 7-day limit)."""
     uname = strip_at(username)
     user_data = state.client.get_user(uname)
     uid = user_data["data"]["id"]
-    data = state.client.get_timeline(uid, max_results)
+    data = state.client.get_timeline(uid, max_results, start_time=start_time, end_time=end_time)
     state.output(data, f"@{uname} timeline")
 
 
