@@ -287,6 +287,7 @@ class XApiClient:
         # Note: /tweets/search/recent is limited to a 7-day window on Basic/Pro
         # tiers. Full-archive (/all) requires Enterprise ($42k+/mo) — see TODO.md.
         all_tweets: list[dict[str, Any]] = []
+        users_by_id: dict[str, dict[str, Any]] = {}
         next_token: str | None = None
 
         while len(all_tweets) < max_results:
@@ -318,14 +319,31 @@ class XApiClient:
 
             all_tweets.extend(page_tweets)
 
+            # Collect user objects from each page's includes
+            for user in (data.get("includes") or {}).get("users") or []:
+                uid = user.get("id")
+                if uid:
+                    users_by_id[uid] = user
+
             meta = data.get("meta", {}) or {}
             next_token = meta.get("next_token")
             if not next_token:
                 break
 
+        # Merge username/name/verified onto each tweet so callers never need
+        # to resolve author_id separately.
+        result_tweets = all_tweets[:max_results]
+        for tweet in result_tweets:
+            user = users_by_id.get(tweet.get("author_id", ""))
+            if user:
+                tweet["username"] = user.get("username")
+                tweet["name"] = user.get("name")
+                if user.get("verified"):
+                    tweet["verified"] = True
+
         return {
-            "data": all_tweets[:max_results],
-            "meta": {"result_count": len(all_tweets[:max_results])},
+            "data": result_tweets,
+            "meta": {"result_count": len(result_tweets)},
         }
 
     def get_tweet_metrics(self, tweet_id: str) -> dict[str, Any]:
