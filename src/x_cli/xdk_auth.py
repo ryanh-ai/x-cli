@@ -142,6 +142,30 @@ class XdkOAuth2Manager:
             kwargs["client_secret"] = self.config.client_secret
         return OAuth2PKCEAuth(**kwargs)
 
+    def _new_pkce_auth_with_token(self, session: OAuth2Session):
+        """Create an OAuth2PKCEAuth instance pre-loaded with an existing token for refresh."""
+        try:
+            from xdk.oauth2_auth import OAuth2PKCEAuth  # type: ignore
+        except Exception as e:  # pragma: no cover - depends on environment
+            raise RuntimeError("xdk is not installed. Run: uv tool install .") from e
+
+        token = {
+            "access_token": session.access_token,
+            "refresh_token": session.refresh_token,
+            "token_type": session.token_type,
+            "scope": session.scope,
+            "expires_at": session.expires_at,
+        }
+        kwargs = {
+            "client_id": self.config.client_id,
+            "redirect_uri": self.config.redirect_uri,
+            "scope": self.config.scopes,
+            "token": token,
+        }
+        if self.config.client_secret:
+            kwargs["client_secret"] = self.config.client_secret
+        return OAuth2PKCEAuth(**kwargs)
+
     def _can_listen_for_callback(self) -> bool:
         parsed = urlparse(self.config.redirect_uri)
         return parsed.scheme == "http" and (parsed.hostname in {"127.0.0.1", "localhost"}) and bool(parsed.port)
@@ -239,13 +263,15 @@ class XdkOAuth2Manager:
         if not session.refresh_token:
             return session
 
-        auth = self._new_pkce_auth()
+        auth = self._new_pkce_auth_with_token(session)
         refreshed: dict[str, Any] | None = None
 
-        if hasattr(auth, "refresh_token"):
-            refreshed = auth.refresh_token(refresh_token=session.refresh_token)
-        elif hasattr(auth, "refresh_access_token"):
-            refreshed = auth.refresh_access_token(refresh_token=session.refresh_token)
+        if hasattr(auth, "refresh_token") and callable(auth.refresh_token):
+            try:
+                refreshed = auth.refresh_token()
+            except Exception:
+                # Refresh token likely expired — need fresh login
+                return session
 
         if not refreshed:
             return session

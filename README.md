@@ -99,8 +99,11 @@ x-cli tweet delete <id-or-url>
 x-cli tweet reply <id-or-url> "nice post"
 x-cli tweet quote <id-or-url> "this is important"
 x-cli tweet search "machine learning" --max 20
+x-cli tweet search "from:XDevelopers" --start-time 2026-02-20T00:00:00Z --end-time 2026-02-28T23:59:59Z --max 50
 x-cli tweet metrics <id-or-url>
 ```
+
+When `--start-time/--end-time` are provided, x-cli auto-selects recent vs full-archive search based on recency (older ranges route to full-archive).
 
 ### Users
 

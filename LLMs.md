@@ -96,7 +96,7 @@ Four modes routed by `format_output(data, mode, title, verbose)`:
 | `delete` | `ID_OR_URL` | | `delete_tweet()` |
 | `reply` | `ID_OR_URL` `TEXT` | | `post_tweet(reply_to=)` |
 | `quote` | `ID_OR_URL` `TEXT` | | `post_tweet(quote_tweet_id=)` |
-| `search` | `QUERY` | `--max N` | `search_tweets()` |
+| `search` | `QUERY` | `--max N` `--start-time ISO` `--end-time ISO` | `search_tweets()` |
 | `metrics` | `ID_OR_URL` | | `get_tweet_metrics()` |
 
 ### User commands (`x-cli user <action>`)
